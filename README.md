@@ -79,3 +79,7 @@ Each colourway needs one full-body cut-out:
 ## Section settings
 
 Heading, eyebrow, subheading, tab order, rail and button labels, an optional secondary button, lineup height, figure width, colours and spacing. *Bottom padding* defaults to 0 so the bottom bar sits evenly spaced.
+
+## License
+
+[MIT](LICENSE). The licence covers the code. The demo video in `media/` shows a real store's products and is included for demonstration only.
