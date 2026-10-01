@@ -1,0 +1,33 @@
+# Step 3 of 3 (optional): create a look by API instead of in the admin.
+# Usually easier in Shopify admin → Content → Metaobjects. Replace the IDs:
+#   MEDIA_IMAGE_ID  a file from Content → Files (gid://shopify/MediaImage/…)
+#   PRODUCT_ID      gid://shopify/Product/…
+#   COLOURWAY_ID    the id returned by the first mutation
+mutation {
+  metaobjectUpsert(
+    handle: { type: "lookbook_colourway", handle: "weekend-olive" }
+    metaobject: { fields: [
+      { key: "label", value: "Weekend – Olive" }
+      { key: "name", value: "Olive" }
+      { key: "swatch", value: "#6f7552" }
+      { key: "model_image", value: "MEDIA_IMAGE_ID" }
+    ] }
+  ) { metaobject { id } userErrors { field message } }
+}
+
+mutation {
+  metaobjectUpsert(
+    handle: { type: "lookbook_look", handle: "weekend" }
+    metaobject: {
+      capabilities: { publishable: { status: ACTIVE } }
+      fields: [
+        { key: "title", value: "Weekend" }
+        { key: "group", value: "Women" }
+        { key: "sort_order", value: "10" }
+        { key: "story", value: "Easy layers for a day outside." }
+        { key: "pieces", value: "[\"PRODUCT_ID\"]" }
+        { key: "colourways", value: "[\"COLOURWAY_ID\"]" }
+      ]
+    }
+  ) { metaobject { id handle } userErrors { field message } }
+}

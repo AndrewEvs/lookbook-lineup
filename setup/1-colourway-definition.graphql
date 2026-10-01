@@ -1,0 +1,21 @@
+# Step 1 of 3: create the "Lookbook Colourway" content type.
+# Run in the Shopify GraphiQL App (Admin API) or any Admin API client with
+# write_metaobject_definitions. Copy the returned id for step 2.
+mutation {
+  metaobjectDefinitionCreate(definition: {
+    type: "lookbook_colourway"
+    name: "Lookbook Colourway"
+    description: "One colour option of a lookbook look: swatch + full-body model photo."
+    displayNameKey: "label"
+    access: { storefront: PUBLIC_READ }
+    fieldDefinitions: [
+      { key: "label", name: "Admin label", type: "single_line_text_field", description: "Only shown in the admin, e.g. \"Weekend – Olive\"." }
+      { key: "name", name: "Colour name", type: "single_line_text_field", required: true, description: "Shown to shoppers. Name it exactly like the product's colour option value (e.g. Olive) so the matching variant is added to the bag." }
+      { key: "swatch", name: "Swatch", type: "color", description: "Dot colour in the swatch picker." }
+      { key: "model_image", name: "Model image", type: "file_reference", required: true, description: "Transparent PNG/WebP, full body, feet on the bottom edge, about 2:5.", validations: [{ name: "file_type_options", value: "[\"Image\"]" }] }
+    ]
+  }) {
+    metaobjectDefinition { id type }
+    userErrors { field message code }
+  }
+}

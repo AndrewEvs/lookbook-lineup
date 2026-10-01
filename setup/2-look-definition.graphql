@@ -1,0 +1,23 @@
+# Step 2 of 3: create the "Lookbook Look" content type.
+# Replace COLOURWAY_DEFINITION_ID with the id returned by step 1.
+mutation {
+  metaobjectDefinitionCreate(definition: {
+    type: "lookbook_look"
+    name: "Lookbook Look"
+    description: "One outfit in the Lookbook lineup section. Set to Draft to hide it."
+    displayNameKey: "title"
+    access: { storefront: PUBLIC_READ }
+    capabilities: { publishable: { enabled: true } }
+    fieldDefinitions: [
+      { key: "title", name: "Look name", type: "single_line_text_field", required: true }
+      { key: "group", name: "Group / tab", type: "single_line_text_field", required: true, description: "Looks with the same group share a tab, e.g. Women or Men." }
+      { key: "sort_order", name: "Sort order", type: "number_integer", description: "Lower numbers come first (10, 20, 30… leaves room to slot new looks in)." }
+      { key: "story", name: "Story", type: "multi_line_text_field", description: "Short description shown in the detail sheet." }
+      { key: "pieces", name: "Pieces", type: "list.product_reference", description: "1–4 products that make up the look.", validations: [{ name: "list.max", value: "4" }] }
+      { key: "colourways", name: "Colourways", type: "list.metaobject_reference", required: true, description: "1–3 colour options. The first is shown by default.", validations: [{ name: "metaobject_definition_id", value: "COLOURWAY_DEFINITION_ID" }, { name: "list.max", value: "3" }] }
+    ]
+  }) {
+    metaobjectDefinition { id type }
+    userErrors { field message code }
+  }
+}

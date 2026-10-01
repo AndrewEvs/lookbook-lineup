@@ -1,0 +1,1223 @@
+{%- comment -%}
+  Lookbook lineup.
+
+  Full-body looks stand in a row on a soft studio floor. The current look stands tall on the
+  right, earlier looks step back and shrink to the left, and the next look waits as a ghost.
+  Under the row: colour swatches (swap the model image and the matching variants) and a
+  "Shop the look" pill with the summed price. A side rail lists the pieces in the look.
+  Clicking the look (or the pill) opens a detail sheet where shoppers tick pieces, pick sizes
+  and add the whole look to the bag in one go.
+
+  Where looks come from:
+    Blocks (if any)   The lineup shows exactly the blocks in the sidebar, in order.
+                        "Look from admin"  picks one Lookbook Look (Content → Metaobjects);
+                                           edit its text, products and photos there.
+                        "Custom look"      everything typed into the block itself.
+    No blocks         Every active Lookbook Look, by Sort order (Draft looks are hidden).
+
+  Each Look (metaobject or block):
+    Group           Tab the look lives under ("Women", "Men"). Tabs appear when there's more than one.
+    Title, Story    Shown in the detail sheet.
+    Colourway 1–3   Name + swatch + model image (transparent full-body cut-out, feet on the bottom edge).
+    Pieces          1–4 products. For each piece the variant whose option value matches the
+                    colourway name (e.g. "Olive") is used; otherwise the first available variant.
+
+  The markup is built in JS from the JSON below, so the theme-editor preview and the local
+  preview (preview/build.js) run exactly the same code.
+{%- endcomment -%}
+
+{%- liquid
+  assign s = section.settings
+  # Blocks win: the lineup shows exactly the blocks in the sidebar, in that order.
+  # With no blocks, it shows every active Lookbook Look from Content → Metaobjects.
+  assign wrote_look = false
+  assign seen_looks = '|'
+  if section.blocks.size > 0
+    assign looks = section.blocks
+    assign from_blocks = true
+  else
+    assign looks = shop.metaobjects.lookbook_look.values
+    assign from_blocks = false
+  endif
+-%}
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+
+<lookbook-lineup
+  class="lookbook-lineup"
+  id="lookbook-lineup-{{ section.id }}"
+  style="
+    --lb-bg-top: {{ s.bg_top }};
+    --lb-bg-bottom: {{ s.bg_bottom }};
+    --lb-text: {{ s.text_color }};
+    --lb-accent: {{ s.accent }};
+    --lb-accent-text: {{ s.accent_text }};
+    --lb-ratio: {{ s.figure_ratio | divided_by: 100.0 }};
+    --lb-stage-h: {{ s.stage_height }}px;
+    --lb-pad-top: {{ s.padding_top }}px;
+    --lb-pad-bottom: {{ s.padding_bottom }}px;
+  "
+>
+  <script type="application/json" data-lookbook-data>
+    {
+      "currency": {{ cart.currency.iso_code | json }},
+      "locale": {{ request.locale.iso_code | json }},
+      "root": {{ routes.root_url | json }},
+      "settings": {
+        "eyebrow": {{ s.eyebrow | json }},
+        "heading": {{ s.heading | json }},
+        "subheading": {{ s.subheading | json }},
+        "railLabel": {{ s.rail_label | json }},
+        "shopLabel": {{ s.shop_label | json }},
+        "addLabel": {{ s.add_label | json }},
+        "secondaryLabel": {{ s.secondary_label | json }},
+        "secondaryUrl": {{ s.secondary_url | json }},
+        "showRail": {{ s.show_rail | json }}
+      },
+      "tabOrder": {{ s.tab_order | json }},
+      "looks": [
+        {%- for look in looks -%}
+          {%- liquid
+            assign mo = nil
+            if from_blocks == false
+              assign mo = look
+            elsif look.type == 'look_ref'
+              assign mo = look.settings.look
+            endif
+            if from_blocks and look.type == 'look_ref' and mo == blank
+              continue
+            endif
+            # the same admin look picked twice only shows once
+            if mo != blank
+              assign mo_key = '|' | append: mo.system.handle | append: '|'
+              if seen_looks contains mo_key
+                continue
+              endif
+              assign seen_looks = seen_looks | append: mo.system.handle | append: '|'
+            endif
+            if mo != blank
+              assign l_group = mo.group.value
+              assign l_title = mo.title.value
+              assign l_story = mo.story.value
+              assign l_pieces = mo.pieces.value
+              assign l_sort = mo.sort_order.value | default: 9999
+            else
+              assign l_group = look.settings.group
+              assign l_title = look.settings.title
+              assign l_story = look.settings.story
+              assign l_pieces = look.settings.pieces
+            endif
+            if from_blocks
+              assign l_id = look.id
+              assign l_sort = forloop.index
+            else
+              assign l_id = look.system.handle
+            endif
+          -%}
+          {%- if wrote_look -%},{%- endif -%}{%- assign wrote_look = true -%}
+          {
+            "id": {{ l_id | json }},
+            "group": {{ l_group | default: 'Lookbook' | strip | json }},
+            "title": {{ l_title | json }},
+            "story": {{ l_story | json }},
+            "sort": {{ l_sort | json }},
+            "colorways": [
+              {%- if mo != blank -%}
+                {%- for cw in mo.colourways.value -%}
+                  {%- if forloop.index0 > 0 -%},{%- endif -%}
+                  {%- assign cw_image = cw.model_image.value -%}
+                  {
+                    "name": {{ cw.name.value | json }},
+                    "swatch": {{ cw.swatch.value | append: '' | json }},
+                    "image": {% if cw_image != blank %}{{ cw_image | image_url: width: 900 | json }}{% else %}null{% endif %},
+                    "alt": {{ cw_image.alt | default: l_title | json }}
+                  }
+                {%- endfor -%}
+              {%- else -%}
+                {%- assign first_cw = true -%}
+                {%- for n in (1..3) -%}
+                  {%- assign k_name = 'cw' | append: n | append: '_name' -%}
+                  {%- assign k_swatch = 'cw' | append: n | append: '_swatch' -%}
+                  {%- assign k_image = 'cw' | append: n | append: '_image' -%}
+                  {%- assign cw_name = look.settings[k_name] -%}
+                  {%- assign cw_image = look.settings[k_image] -%}
+                  {%- if cw_name != blank or cw_image != blank -%}
+                    {%- unless first_cw -%},{%- endunless -%}
+                    {%- assign first_cw = false -%}
+                    {
+                      "name": {{ cw_name | json }},
+                      "swatch": {{ look.settings[k_swatch] | append: '' | json }},
+                      "image": {% if cw_image != blank %}{{ cw_image | image_url: width: 900 | json }}{% else %}null{% endif %},
+                      "alt": {% if cw_image != blank %}{{ cw_image.alt | default: l_title | json }}{% else %}null{% endif %}
+                    }
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endif -%}
+            ],
+            "pieces": [
+              {%- for p in l_pieces -%}
+                {%- if forloop.index0 > 0 -%},{%- endif -%}
+                {
+                  "id": {{ p.id }},
+                  "title": {{ p.title | json }},
+                  "url": {{ p.url | json }},
+                  "image": {% if p.featured_image %}{{ p.featured_image | image_url: width: 600 | json }}{% else %}null{% endif %},
+                  "options": {{ p.options | json }},
+                  "variants": [
+                    {%- for v in p.variants -%}
+                      {%- if forloop.index0 > 0 -%},{%- endif -%}
+                      {"id":{{ v.id }},"available":{{ v.available | json }},"price":{{ v.price }},"options":{{ v.options | json }},"image":{% if v.featured_image %}{{ v.featured_image | image_url: width: 600 | json }}{% else %}null{% endif %}}
+                    {%- endfor -%}
+                  ]
+                }
+              {%- endfor -%}
+            ]
+          }
+        {%- endfor -%}
+      ]
+    }
+  </script>
+
+  <noscript>
+    <div class="lb-noscript">
+      {%- for look in looks -%}
+        {%- liquid
+          assign ns_mo = nil
+          if from_blocks == false
+            assign ns_mo = look
+          elsif look.type == 'look_ref'
+            assign ns_mo = look.settings.look
+          endif
+        -%}
+        {%- if ns_mo != blank -%}
+          {%- assign ns_img = ns_mo.colourways.value.first.model_image.value -%}
+          {%- assign ns_title = ns_mo.title.value -%}
+        {%- else -%}
+          {%- assign ns_img = look.settings.cw1_image -%}
+          {%- assign ns_title = look.settings.title -%}
+        {%- endif -%}
+        <figure>
+          {%- if ns_img != blank -%}
+            {{ ns_img | image_url: width: 500 | image_tag: loading: 'lazy' }}
+          {%- endif -%}
+          <figcaption>{{ ns_title | escape }}</figcaption>
+        </figure>
+      {%- endfor -%}
+    </div>
+  </noscript>
+</lookbook-lineup>
+
+{% stylesheet %}
+  .lookbook-lineup {
+    --lb-serif: 'EB Garamond', Georgia, 'Times New Roman', serif;
+    --lb-ease: cubic-bezier(.22, .8, .24, 1);
+    --lb-dur: 760ms;
+    --lb-line: color-mix(in srgb, var(--lb-text) 12%, transparent);
+    --lb-soft: color-mix(in srgb, var(--lb-text) 58%, transparent);
+    --lb-floor-gap: clamp(28px, 6%, 48px); /* floor left visible under the shoes */
+    display: block;
+    position: relative;
+    color: var(--lb-text);
+    background: linear-gradient(180deg, var(--lb-bg-top) 0%, var(--lb-bg-bottom) 100%);
+    padding: var(--lb-pad-top) 0 var(--lb-pad-bottom);
+    overflow: hidden;
+    isolation: isolate;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .lookbook-lineup *, .lookbook-lineup *::before, .lookbook-lineup *::after { box-sizing: border-box; }
+  .lookbook-lineup button { font: inherit; color: inherit; }
+  .lb-noscript { display: flex; gap: 16px; overflow-x: auto; padding: 0 24px; }
+  .lb-noscript img { height: 360px; width: auto; }
+
+  .lb-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 210px;
+    grid-template-areas: "head head" "stage rail" "bar bar";
+    column-gap: 28px;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 3vw, 40px);
+  }
+  .lb-wrap--no-rail { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "stage" "bar"; }
+
+  /* Header */
+  .lb-head { grid-area: head; display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 16px; margin-bottom: 8px; }
+  .lb-eyebrow { margin: 0 0 6px; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--lb-soft); }
+  .lb-title {
+    margin: 0;
+    font-family: var(--lb-serif);
+    font-weight: 400;
+    font-size: clamp(34px, 4.2vw, 56px);
+    line-height: 1;
+    letter-spacing: -.01em;
+  }
+  .lb-title__group { display: inline-block; transition: opacity .3s, transform .3s var(--lb-ease); }
+  .lb-title__group.is-swapping { opacity: 0; transform: translateY(6px); }
+  .lb-sub { margin: 10px 0 0; max-width: 34ch; color: var(--lb-soft); font-size: 13px; }
+  .lb-tabs { display: flex; gap: 22px; padding-top: 6px; }
+  .lb-tab {
+    background: none; border: 0; padding: 4px 0; cursor: pointer;
+    font-size: 13px; letter-spacing: .04em; color: var(--lb-soft);
+    border-bottom: 1px solid transparent;
+    transition: color .2s, border-color .2s;
+  }
+  .lb-tab:hover { color: var(--lb-text); }
+  .lb-tab[aria-selected="true"] { color: var(--lb-text); border-bottom-color: currentColor; }
+
+  /* Stage */
+  .lb-stage {
+    grid-area: stage;
+    position: relative;
+    height: var(--lb-stage-h);
+    touch-action: pan-y;
+    outline: none;
+  }
+  .lb-stage:focus-visible { box-shadow: inset 0 0 0 2px var(--lb-text); border-radius: 8px; }
+  .lb-floor {
+    position: absolute; left: -10%; right: -10%; bottom: 0; height: calc(22% + var(--lb-floor-gap));
+    background: radial-gradient(60% 100% at 60% 100%, color-mix(in srgb, var(--lb-text) 7%, transparent), transparent 70%);
+    pointer-events: none;
+  }
+  .lb-track {
+    position: absolute; inset: 0 0 var(--lb-floor-gap); transition: opacity .35s;
+    /* looks further back dissolve into the backdrop at the left edge */
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 22%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 22%);
+  }
+  .lb-track[hidden] { display: block; opacity: 0; visibility: hidden; pointer-events: none; }
+  .lb-fig {
+    position: absolute; left: 0; bottom: 0;
+    width: var(--w, 200px); height: 100%;
+    padding: 0; margin: 0; border: 0; background: none;
+    cursor: pointer;
+    transform-origin: 50% 100%;
+    transform: translate3d(var(--x, 0px), 0, 0) scale(var(--s, 1));
+    opacity: var(--o, 1);
+    filter: blur(var(--b, 0px)) saturate(var(--sat, 1)) brightness(var(--br, 1)) contrast(var(--ct, 1));
+    z-index: var(--z, 1);
+    transition:
+      transform var(--lb-dur) var(--lb-ease),
+      opacity var(--lb-dur) var(--lb-ease),
+      filter var(--lb-dur) var(--lb-ease);
+    will-change: transform, opacity;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lb-fig[aria-hidden="true"] { pointer-events: none; }
+  .lb-fig:focus-visible { outline: none; }
+  .lb-fig:focus-visible .lb-fig__frame { outline: 2px solid var(--lb-text); outline-offset: 6px; border-radius: 6px; }
+  .lb-fig__frame { position: absolute; inset: 0; }
+  .lb-fig__shadow {
+    position: absolute; left: 14%; right: 14%; bottom: -1.5%; height: 4%;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(0,0,0,.28), rgba(0,0,0,0));
+    filter: blur(2px);
+  }
+  .lb-fig__img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; object-position: 50% 100%;
+    transition: opacity .45s ease;
+    user-select: none; -webkit-user-drag: none;
+  }
+  .lb-fig__img.is-leaving { opacity: 0; }
+  .lb-fig__img.is-entering { opacity: 0; }
+  .lb-fig.is-before:hover { opacity: 1; filter: none; }
+  .lb-fig.is-active .lb-fig__img { filter: drop-shadow(0 18px 24px rgba(0,0,0,.08)); }
+  .lb-fig__hint {
+    position: absolute; left: 50%; top: 42%;
+    transform: translate(-50%, 8px) scale(.9);
+    opacity: 0;
+    padding: 8px 14px; border-radius: 999px;
+    background: color-mix(in srgb, var(--lb-bg-top) 86%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font-size: 12px; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0,0,0,.08);
+    transition: opacity .25s, transform .25s var(--lb-ease);
+    pointer-events: none;
+  }
+  .lb-fig.is-active:hover .lb-fig__hint, .lb-fig.is-active:focus-visible .lb-fig__hint { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+  /* Bar */
+  .lb-bar {
+    grid-area: bar;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    padding: 28px 0; /* same space above and below so the bar sits centred in its band */
+  }
+  .lb-caption { font-size: 12px; color: var(--lb-soft); min-width: 0; }
+  .lb-caption strong { display: block; color: var(--lb-text); font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-controls { display: flex; align-items: center; gap: 14px; }
+  .lb-swatches {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px 6px 16px; border-radius: 999px;
+    background: color-mix(in srgb, #fff 55%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 6px 22px rgba(0,0,0,.05);
+  }
+  .lb-swatches__name { font-size: 12px; min-width: 64px; color: var(--lb-soft); }
+  .lb-swatch {
+    --sw: #bbb;
+    width: 22px; height: 22px; border-radius: 50%; padding: 0; cursor: pointer;
+    background: var(--sw); border: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.1) inset;
+    transition: transform .2s var(--lb-ease), box-shadow .2s;
+  }
+  .lb-swatch:hover { transform: scale(1.1); }
+  .lb-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--lb-bg-top), 0 0 0 3.5px var(--lb-text); }
+  .lb-swatch:focus-visible { outline: 2px solid var(--lb-text); outline-offset: 3px; }
+  .lb-shop {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 6px 6px 6px 18px; border-radius: 999px; border: 0; cursor: pointer;
+    background: var(--lb-accent); color: var(--lb-accent-text) !important;
+    font-size: 13px; font-weight: 500; white-space: nowrap;
+    transition: transform .2s var(--lb-ease), box-shadow .2s;
+  }
+  .lb-shop:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(0,0,0,.16); }
+  .lb-shop:focus-visible { outline: 2px solid var(--lb-text); outline-offset: 3px; }
+  .lb-pill {
+    display: inline-block; padding: 5px 11px; border-radius: 999px;
+    background: var(--lb-accent-text); color: var(--lb-accent);
+    font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .lb-arrows { display: flex; justify-content: flex-end; gap: 8px; }
+  .lb-arrow {
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+    display: grid; place-items: center;
+    border: 1px solid var(--lb-line); background: transparent;
+    transition: background .2s, color .2s, border-color .2s, opacity .2s;
+  }
+  .lb-arrow svg { width: 16px; height: 16px; }
+  .lb-arrow.lb-arrow--next { background: var(--lb-accent); color: var(--lb-accent-text); border-color: var(--lb-accent); }
+  .lb-arrow:hover { border-color: var(--lb-text); }
+  .lb-arrow:disabled { opacity: .3; cursor: default; }
+  .lb-arrow:focus-visible { outline: 2px solid var(--lb-text); outline-offset: 2px; }
+  .lb-count { font-size: 12px; color: var(--lb-soft); font-variant-numeric: tabular-nums; margin-right: 6px; align-self: center; }
+
+  /* Rail */
+  .lb-rail {
+    grid-area: rail; min-width: 0;
+    display: flex; flex-direction: column;
+    height: var(--lb-stage-h);
+  }
+  .lb-rail__label { margin: 0 0 12px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--lb-soft); }
+  /* cards share the stage height, so 1–4 pieces always sit above the bar */
+  .lb-rail__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+  .lb-rail__list > li { flex: 0 1 260px; min-height: 0; display: flex; }
+  .lb-piece {
+    display: flex; flex-direction: column; width: 100%; min-height: 0; text-align: left; cursor: pointer;
+    border: 0; padding: 0; background: none;
+    animation: lb-rise .55s var(--lb-ease) both;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .lb-piece__media {
+    display: block; flex: 1 1 auto; min-height: 56px; border-radius: 10px; overflow: hidden;
+    background: color-mix(in srgb, #fff 62%, transparent);
+    box-shadow: 0 1px 0 rgba(255,255,255,.8) inset;
+    position: relative;
+  }
+  .lb-piece__media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 8%; transition: transform .5s var(--lb-ease); }
+  .lb-piece:hover .lb-piece__media img { transform: scale(1.05); }
+  .lb-piece__title {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    margin-top: 7px; font-size: 12px; font-weight: 500; line-height: 1.3;
+  }
+  .lb-piece__meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--lb-soft); }
+  .lb-piece:focus-visible { outline: 2px solid var(--lb-text); outline-offset: 4px; border-radius: 10px; }
+  @keyframes lb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .lb-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* Detail sheet */
+  .lb-dialog {
+    width: min(1180px, calc(100vw - 32px));
+    height: min(760px, calc(100vh - 32px));
+    max-width: none; max-height: none;
+    padding: 0; border: 0; border-radius: 18px;
+    color: var(--lb-text);
+    background: linear-gradient(180deg, var(--lb-bg-top), var(--lb-bg-bottom));
+    box-shadow: 0 40px 120px rgba(0,0,0,.25);
+    overflow: hidden;
+  }
+  .lb-dialog::backdrop { background: rgba(20, 18, 16, .38); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+  .lb-dialog[open] { animation: lb-sheet-in .5s var(--lb-ease); }
+  .lb-dialog[open]::backdrop { animation: lb-fade .4s ease; }
+  .lb-dialog.is-closing { animation: lb-sheet-out .28s ease forwards; }
+  .lb-dialog.is-closing::backdrop { animation: lb-fade .28s ease reverse forwards; }
+  @keyframes lb-sheet-in { from { opacity: 0; transform: translateY(24px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes lb-sheet-out { to { opacity: 0; transform: translateY(16px) scale(.985); } }
+  @keyframes lb-fade { from { opacity: 0; } }
+
+  .lb-detail { display: grid; grid-template-columns: 76px minmax(0, 1fr) 400px; height: 100%; }
+  .lb-detail__close {
+    position: absolute; top: 14px; right: 14px; z-index: 3;
+    width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+    border: 1px solid var(--lb-line); background: color-mix(in srgb, #fff 70%, transparent);
+    display: grid; place-items: center;
+  }
+  .lb-detail__close svg { width: 14px; height: 14px; }
+  .lb-thumbs { display: flex; flex-direction: column; gap: 10px; padding: 64px 0 20px 16px; overflow-y: auto; scrollbar-width: none; }
+  .lb-thumb {
+    flex: 0 0 auto; width: 52px; aspect-ratio: 3 / 4; border-radius: 8px; padding: 3px; cursor: pointer;
+    border: 1px solid transparent; background: color-mix(in srgb, #fff 55%, transparent);
+    transition: border-color .2s;
+  }
+  .lb-thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .lb-thumb[aria-current="true"] { border-color: var(--lb-text); }
+  .lb-media { position: relative; overflow: hidden; }
+  .lb-media img {
+    position: absolute; inset: 6% 6% 0; width: 88%; height: 94%;
+    object-fit: contain; object-position: 50% 100%;
+    animation: lb-media-in .5s var(--lb-ease);
+  }
+  .lb-media img.is-flat { object-position: 50% 50%; inset: 8%; height: 84%; width: 84%; }
+  @keyframes lb-media-in { from { opacity: 0; transform: scale(1.03); } }
+  .lb-info {
+    display: flex; flex-direction: column; gap: 18px;
+    padding: 56px 32px 28px 8px; overflow-y: auto;
+  }
+  .lb-info__eyebrow { margin: 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--lb-soft); }
+  .lb-info__title { margin: 4px 0 0; font-family: var(--lb-serif); font-weight: 400; font-size: 38px; line-height: 1.05; }
+  .lb-info__price { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .lb-info__price small { font-size: 12px; color: var(--lb-soft); }
+  .lb-info__story { margin: 0; font-size: 13px; color: var(--lb-soft); max-width: 46ch; }
+  .lb-info__label { display: flex; gap: 6px; margin: 0 0 8px; font-size: 12px; font-weight: 500; }
+  .lb-info__label span { font-weight: 400; color: var(--lb-soft); }
+  .lb-info .lb-swatches { background: none; box-shadow: none; padding: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .lb-rows { display: grid; gap: 10px; }
+  .lb-row {
+    display: grid; grid-template-columns: 22px 52px 1fr auto; gap: 4px 12px; align-items: center;
+    padding: 12px; border-radius: 12px;
+    background: color-mix(in srgb, #fff 58%, transparent);
+    border: 1px solid transparent;
+    transition: opacity .25s, border-color .25s;
+  }
+  .lb-row.is-off { opacity: .5; }
+  .lb-row.needs-size { border-color: #b4532a; }
+  .lb-check { position: relative; width: 20px; height: 20px; }
+  .lb-check input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .lb-check span {
+    display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+    border: 1.5px solid var(--lb-soft); pointer-events: none;
+    transition: background .2s, border-color .2s;
+  }
+  .lb-check input:checked + span { background: var(--lb-accent); border-color: var(--lb-accent); }
+  .lb-check span svg { width: 10px; height: 10px; color: var(--lb-accent-text); opacity: 0; transition: opacity .2s; }
+  .lb-check input:checked + span svg { opacity: 1; }
+  .lb-check input:focus-visible + span { outline: 2px solid var(--lb-text); outline-offset: 2px; }
+  .lb-row__img { width: 52px; height: 58px; object-fit: contain; border-radius: 8px; background: rgba(255,255,255,.7); }
+  .lb-row__title { font-size: 13px; font-weight: 500; line-height: 1.25; }
+  .lb-row__title a { color: inherit; text-decoration: none; }
+  .lb-row__title a:hover { text-decoration: underline; }
+  .lb-row__sub { display: block; font-size: 11px; font-weight: 400; color: var(--lb-soft); }
+  .lb-row__price { font-size: 13px; font-variant-numeric: tabular-nums; align-self: start; }
+  .lb-sizes { grid-column: 3 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .lb-size {
+    min-width: 36px; height: 30px; padding: 0 8px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--lb-line); background: transparent; font-size: 12px;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .lb-size:hover:not(:disabled) { border-color: var(--lb-text); }
+  .lb-size[aria-pressed="true"] { background: var(--lb-accent); color: var(--lb-accent-text); border-color: var(--lb-accent); }
+  .lb-size:disabled { opacity: .35; text-decoration: line-through; cursor: not-allowed; }
+  .lb-size:focus-visible { outline: 2px solid var(--lb-text); outline-offset: 2px; }
+  .lb-row__note { grid-column: 3 / -1; font-size: 11px; color: #b4532a; }
+  .lb-actions { display: grid; gap: 10px; margin-top: auto; padding-top: 6px; }
+  .lb-add {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 8px 8px 8px 22px; border-radius: 999px; border: 0; cursor: pointer;
+    background: var(--lb-accent); color: var(--lb-accent-text) !important;
+    font-size: 14px; font-weight: 500;
+    transition: opacity .2s, transform .2s var(--lb-ease);
+  }
+  .lb-add:hover:not(:disabled) { transform: translateY(-1px); }
+  .lb-add:disabled { opacity: .45; cursor: not-allowed; }
+  .lb-add .lb-pill { font-size: 13px; padding: 7px 14px; }
+  .lb-add.is-busy { opacity: .7; cursor: progress; }
+  .lb-secondary {
+    display: block; text-align: center; padding: 13px; border-radius: 999px;
+    border: 1px solid var(--lb-line); font-size: 13px; color: inherit; text-decoration: none;
+  }
+  .lb-secondary:hover { border-color: var(--lb-text); }
+  .lb-status { min-height: 18px; margin: 0; font-size: 12px; text-align: center; color: var(--lb-soft); }
+  .lb-status a { color: inherit; }
+  .lb-status.is-error { color: #b4532a; }
+
+  @media (max-width: 989px) {
+    .lb-wrap { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "stage" "bar" "rail"; }
+    .lb-rail { padding-top: 22px; height: auto; }
+    .lb-rail__list > li { flex: none; }
+    .lb-piece__media { flex: none; aspect-ratio: 1 / 1.08; }
+    .lb-rail__list { flex-direction: row; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+    .lb-rail__list > li { width: 140px; }
+    .lb-piece { scroll-snap-align: start; }
+    .lb-detail { grid-template-columns: 64px minmax(0, 1fr) 360px; }
+  }
+  @media (max-width: 749px) {
+    .lookbook-lineup { --lb-stage-h-m: min(var(--lb-stage-h), 60vh, 430px); }
+    .lb-stage { height: var(--lb-stage-h-m); }
+    .lb-head { grid-template-columns: 1fr; }
+    .lb-tabs { order: -1; }
+    .lb-bar { grid-template-columns: 1fr auto; grid-template-areas: "controls controls" "caption arrows"; row-gap: 14px; }
+    .lb-controls { grid-area: controls; justify-content: space-between; flex-wrap: wrap; }
+    .lb-caption { grid-area: caption; }
+    .lb-arrows { grid-area: arrows; }
+    .lb-swatches__name { min-width: 0; }
+    .lb-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+    .lb-detail { display: block; overflow-y: auto; height: 100%; }
+    .lb-thumbs { flex-direction: row; padding: 12px 16px 0; position: sticky; top: 0; z-index: 2; }
+    .lb-thumb { width: 44px; }
+    .lb-media { height: 54vh; }
+    .lb-info { padding: 18px 16px 28px; overflow: visible; }
+    .lb-info__title { font-size: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lookbook-lineup { --lb-dur: 1ms; }
+    .lb-piece, .lb-media img, .lb-dialog[open] { animation: none; }
+  }
+{% endstylesheet %}
+
+{% javascript %}
+  (() => {
+    if (customElements.get('lookbook-lineup')) return;
+
+    const ICONS = {
+      prev: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 8H3M7 4 3 8l4 4"/></svg>',
+      next: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h10M9 4l4 4-4 4"/></svg>',
+      close: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 1l12 12M13 1 1 13"/></svg>',
+      check: '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2"><path d="M1.5 5.2 4 7.5l4.5-5"/></svg>'
+    };
+    const SIZE_RE = /size|taille|größe/i;
+    const COLOR_RE = /colou?r|shade|wash/i;
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const pad = (n) => String(n).padStart(2, '0');
+    const norm = (s) => String(s ?? '').trim().toLowerCase();
+    const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+    // Stand-in figure for looks that don't have a model image yet (theme editor).
+    const PLACEHOLDER = (tint) => 'data:image/svg+xml,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 1000"><g fill="${tint || '#c9c2b8'}" opacity=".55">` +
+      '<ellipse cx="200" cy="92" rx="40" ry="50"/><rect x="184" y="132" width="32" height="40" rx="10"/>' +
+      '<path d="M120 190q4-22 52-26h56q48 4 52 26l12 270H108z"/><path d="M118 192 88 450h30l26-230zM282 192l30 258h-30l-26-230z"/>' +
+      '<path d="M112 452h176l-14 478h-62l-12-360-12 360h-62z"/><ellipse cx="157" cy="944" rx="34" ry="13"/><ellipse cx="243" cy="944" rx="34" ry="13"/>' +
+      '</g></svg>');
+
+    class LookbookLineup extends HTMLElement {
+      connectedCallback() {
+        const raw = this.querySelector('[data-lookbook-data]');
+        if (!raw || this.data) return;
+        try { this.data = JSON.parse(raw.textContent); } catch (e) { console.error('[lookbook] bad data', e); return; }
+        const d = this.data;
+        const nf = (digits) => new Intl.NumberFormat(d.locale || undefined, { style: 'currency', currency: d.currency || 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits });
+        this.money = { whole: nf(0), cents: nf(2) };
+        this.looks = (d.looks || []).filter((l) => l.colorways.length).map((l) => this.prepLook(l));
+        const rankOf = (l) => (Number.isFinite(Number(l.sort)) && l.sort !== null && l.sort !== '' ? Number(l.sort) : 9999);
+        this.looks.sort((a, b) => rankOf(a) - rankOf(b));
+        const tabOrder = String(d.tabOrder || '').split(',').map((t) => norm(t)).filter(Boolean);
+        const rank = (g) => { const i = tabOrder.indexOf(norm(g)); return i < 0 ? 999 : i; };
+        this.groups = [...new Set(this.looks.map((l) => l.group))].sort((a, b) => rank(a) - rank(b));
+        this.state = { group: this.groups[0], active: {}, cw: {} };
+        this.groups.forEach((g) => {
+          const n = this.looks.filter((l) => l.group === g).length;
+          this.state.active[g] = Math.min(3, n - 1); // open mid-row so the lineup reads straight away
+        });
+        this.render();
+        this.bind();
+        this.layout(true);
+        this.ro = new ResizeObserver(() => this.layout(true));
+        this.ro.observe(this.stage);
+      }
+
+      disconnectedCallback() { this.ro?.disconnect(); }
+
+      prepLook(look) {
+        look.colorways.forEach((c) => { if (!c.image) c.image = PLACEHOLDER(c.swatch); });
+        look.pieces = look.pieces.map((p) => {
+          const opts = (p.options || []).map((o) => (typeof o === 'string' ? o : o.name));
+          return { ...p, opts, sizeIdx: opts.findIndex((o) => SIZE_RE.test(o)), colorIdx: opts.findIndex((o) => COLOR_RE.test(o)) };
+        });
+        return look;
+      }
+
+      /* ---------- data helpers ---------- */
+      get groupLooks() { return this.looks.filter((l) => l.group === this.state.group); }
+      get activeIdx() { return this.state.active[this.state.group]; }
+      get activeLook() { return this.groupLooks[this.activeIdx]; }
+      cwIdx(look) { return this.state.cw[look.id] || 0; }
+      cw(look) { return look.colorways[this.cwIdx(look)]; }
+
+      // Variants of a piece that belong to the look's current colourway.
+      colorVariants(piece, look) {
+        const name = norm(this.cw(look).name);
+        const vs = piece.variants;
+        if (!name) return vs;
+        const byColorOpt = piece.colorIdx >= 0 ? vs.filter((v) => norm(v.options[piece.colorIdx]) === name) : [];
+        if (byColorOpt.length) return byColorOpt;
+        const byAny = vs.filter((v) => v.options.some((o) => norm(o) === name));
+        return byAny.length ? byAny : vs;
+      }
+      pickVariant(piece, look, size) {
+        const vs = this.colorVariants(piece, look);
+        if (piece.sizeIdx >= 0 && size) {
+          return vs.find((v) => v.options[piece.sizeIdx] === size) || null;
+        }
+        return vs.find((v) => v.available) || vs[0];
+      }
+      pieceImage(piece, look) {
+        const v = this.colorVariants(piece, look).find((x) => x.image);
+        return (v && v.image) || piece.image;
+      }
+      piecePrice(piece, look) {
+        const vs = this.colorVariants(piece, look);
+        const pool = vs.filter((v) => v.available).length ? vs.filter((v) => v.available) : vs;
+        return Math.min(...pool.map((v) => v.price));
+      }
+      lookPrice(look) { return look.pieces.reduce((t, p) => t + this.piecePrice(p, look), 0); }
+      fmt(cents) { return (cents % 100 ? this.money.cents : this.money.whole).format(cents / 100); }
+      sizesFor(piece, look) {
+        if (piece.sizeIdx < 0) return [];
+        const seen = new Map();
+        this.colorVariants(piece, look).forEach((v) => {
+          const s = v.options[piece.sizeIdx];
+          seen.set(s, (seen.get(s) || false) || v.available);
+        });
+        return [...seen].map(([size, available]) => ({ size, available }));
+      }
+
+      /* ---------- render ---------- */
+      render() {
+        const s = this.data.settings;
+        const showRail = s.showRail !== false;
+        const tabs = this.groups.length > 1
+          ? `<div class="lb-tabs" role="tablist" aria-label="Lookbook">${this.groups.map((g, i) =>
+              `<button type="button" class="lb-tab" role="tab" data-group="${esc(g)}" aria-selected="${i === 0}">${esc(g)}</button>`).join('')}</div>`
+          : '';
+        const tracks = this.groups.map((g, gi) => {
+          const looks = this.looks.filter((l) => l.group === g);
+          return `<div class="lb-track" data-group="${esc(g)}"${gi ? ' hidden' : ''}>${looks.map((l, i) => {
+            const c = l.colorways[0];
+            return `<button type="button" class="lb-fig" data-look="${esc(l.id)}" data-i="${i}" aria-label="Look ${i + 1}: ${esc(l.title)}">
+              <span class="lb-fig__frame"><span class="lb-fig__shadow"></span>${c.image ? `<img class="lb-fig__img" src="${esc(c.image)}" alt="${esc(c.alt || l.title)}" draggable="false" loading="${i < 6 ? 'eager' : 'lazy'}">` : ''}</span>
+              <span class="lb-fig__hint">View the look</span>
+            </button>`;
+          }).join('')}</div>`;
+        }).join('');
+
+        this.innerHTML = `
+          <div class="lb-wrap${showRail ? '' : ' lb-wrap--no-rail'}">
+            <header class="lb-head">
+              <div>
+                ${s.eyebrow ? `<p class="lb-eyebrow">${esc(s.eyebrow)}</p>` : ''}
+                <h2 class="lb-title">${esc(s.heading)} <span class="lb-title__group">${esc(this.groups.length > 1 ? this.state.group : '')}</span></h2>
+                ${s.subheading ? `<p class="lb-sub">${esc(s.subheading)}</p>` : ''}
+              </div>
+              ${tabs}
+            </header>
+            <div class="lb-stage" tabindex="0" role="region" aria-roledescription="carousel" aria-label="${esc(s.heading)}">
+              <div class="lb-floor" aria-hidden="true"></div>
+              ${tracks}
+            </div>
+            <div class="lb-bar">
+              <div class="lb-caption" data-caption></div>
+              <div class="lb-controls">
+                <div class="lb-swatches" data-swatches role="group" aria-label="Colour"></div>
+                <button type="button" class="lb-shop" data-open>${esc(s.shopLabel || 'Shop the look')} <span class="lb-pill" data-price></span></button>
+              </div>
+              <div class="lb-arrows">
+                <span class="lb-count" data-count></span>
+                <button type="button" class="lb-arrow" data-prev aria-label="Previous look">${ICONS.prev}</button>
+                <button type="button" class="lb-arrow lb-arrow--next" data-next aria-label="Next look">${ICONS.next}</button>
+              </div>
+            </div>
+            ${showRail ? `<aside class="lb-rail" aria-label="${esc(s.railLabel || 'In this look')}">
+              <p class="lb-rail__label">${esc(s.railLabel || 'In this look')}</p>
+              <ul class="lb-rail__list" role="list" data-rail></ul>
+            </aside>` : ''}
+            <p class="lb-live" aria-live="polite" data-live></p>
+          </div>
+          <dialog class="lb-dialog" aria-label="Look details"></dialog>`;
+
+        this.stage = this.querySelector('.lb-stage');
+        this.dialog = this.querySelector('.lb-dialog');
+        this.syncUi(false);
+      }
+
+      syncUi(announce = true) {
+        const look = this.activeLook;
+        if (!look) return;
+        const looks = this.groupLooks;
+        const cw = this.cw(look);
+        const q = (sel) => this.querySelector(sel);
+
+        q('[data-caption]').innerHTML = `<strong>${esc(look.title)}</strong>${look.pieces.length} piece${look.pieces.length === 1 ? '' : 's'}`;
+        q('[data-count]').textContent = `${pad(this.activeIdx + 1)} / ${pad(looks.length)}`;
+        q('[data-prev]').disabled = this.activeIdx === 0;
+        q('[data-next]').disabled = this.activeIdx === looks.length - 1;
+        q('[data-price]').textContent = look.pieces.length ? this.fmt(this.lookPrice(look)) : '';
+        q('[data-open]').hidden = !look.pieces.length;
+
+        const sw = q('[data-swatches]');
+        sw.hidden = look.colorways.length < 2 && !cw.name;
+        sw.innerHTML = this.swatchHtml(look);
+
+        const rail = q('[data-rail]');
+        if (rail) {
+          rail.innerHTML = look.pieces.map((p, i) => `<li><button type="button" class="lb-piece" data-piece="${i}" style="--i:${i}">
+            <span class="lb-piece__media">${this.pieceImage(p, look) ? `<img src="${esc(this.pieceImage(p, look))}" alt="" loading="lazy">` : ''}</span>
+            <span class="lb-piece__title">${esc(p.title)}</span>
+            <span class="lb-piece__meta"><span>${esc(cw.name || '')}</span><span>${this.fmt(this.piecePrice(p, look))}</span></span>
+          </button></li>`).join('');
+        }
+        if (announce) q('[data-live]').textContent = `Look ${this.activeIdx + 1} of ${looks.length}: ${look.title}${cw.name ? `, ${cw.name}` : ''}`;
+      }
+
+      swatchHtml(look) {
+        const cw = this.cw(look);
+        return `<span class="lb-swatches__name" data-cw-name>${esc(cw.name || '')}</span>${look.colorways.length > 1 ? look.colorways.map((c, i) =>
+          `<button type="button" class="lb-swatch" data-cw="${i}" style="--sw:${esc(c.swatch || '#bbb')}" aria-pressed="${i === this.cwIdx(look)}" aria-label="${esc(c.name || `Colour ${i + 1}`)}"></button>`).join('') : ''}`;
+      }
+
+      /* ---------- the lineup ---------- */
+      layout(instant = false) {
+        const track = this.querySelector(`.lb-track[data-group="${CSS.escape(this.state.group)}"]`);
+        if (!track) return;
+        const W = this.stage.clientWidth;
+        const H = track.clientHeight;
+        const ratio = parseFloat(getComputedStyle(this).getPropertyValue('--lb-ratio')) || 0.4;
+        const mobile = W < 560;
+        const w = Math.min(H * ratio, W * (mobile ? 0.5 : 0.3));
+        const anchor = W * (mobile ? 0.6 : 0.7);
+        // Depth comes mostly from the wash-out in place(); the size drop stays small so
+        // nobody behind looks tiny.
+        const shrink = mobile ? 0.05 : 0.03;
+        const gap = mobile ? 0.6 : 0.8;
+        const figs = [...track.children];
+        const a = this.activeIdx;
+
+        if (instant) figs.forEach((f) => (f.style.transition = 'none'));
+        let x = anchor;
+        let prevW = w;
+        const scaleAt = (d) => Math.max(0.84, 1 - shrink * Math.abs(d));
+        figs.forEach((f) => f.style.setProperty('--w', `${w}px`));
+        for (let i = a; i >= 0; i--) {
+          const d = i - a;
+          const s = scaleAt(d);
+          if (d < 0) x -= (prevW / 2 + (w * s) / 2) * gap;
+          prevW = w * s;
+          this.place(figs[i], { x, w, s, d, mobile });
+        }
+        for (let i = a + 1; i < figs.length; i++) {
+          const d = i - a;
+          const nx = anchor + w * (mobile ? 0.78 : 0.92) * d;
+          this.place(figs[i], { x: nx, w, s: 1, d, mobile });
+        }
+        if (instant) {
+          track.offsetHeight; // flush
+          figs.forEach((f) => (f.style.transition = ''));
+        }
+      }
+
+      place(f, { x, w, s, d, mobile }) {
+        const left = x - w / 2;
+        const visibleBehind = mobile ? 3 : 7;
+        let o = 1, b = 0, sat = 1, br = 1, ct = 1;
+        if (d < 0) {
+          // each step back: lighter, flatter, slightly softer (like it's further into the haze)
+          const far = Math.abs(d);
+          const wash = Math.min(1, far / 5);
+          o = far > visibleBehind ? 0 : 1 - wash * 0.45;
+          sat = 1 - wash * 0.55;
+          br = 1 + wash * 0.22;
+          ct = 1 - wash * 0.35;
+          b = Math.max(0, far - 1) * 0.45;
+          if (left + w * s < -20) o = 0;
+        } else if (d === 1) { o = 0.2; b = 2.5; sat = 0.7; br = 1.1; ct = 0.8; }
+        else if (d > 1) { o = 0; b = 4; }
+        f.style.setProperty('--x', `${left}px`);
+        f.style.setProperty('--s', s.toFixed(3));
+        f.style.setProperty('--o', o.toFixed(3));
+        f.style.setProperty('--b', `${b}px`);
+        f.style.setProperty('--sat', sat.toFixed(2));
+        f.style.setProperty('--br', br.toFixed(3));
+        f.style.setProperty('--ct', ct.toFixed(3));
+        f.style.setProperty('--z', String(100 - Math.abs(d)));
+        f.classList.toggle('is-active', d === 0);
+        f.classList.toggle('is-before', d < 0);
+        const hidden = o === 0;
+        f.setAttribute('aria-hidden', String(hidden));
+        f.tabIndex = d === 0 ? 0 : -1;
+        if (d === 0) f.setAttribute('aria-current', 'true'); else f.removeAttribute('aria-current');
+      }
+
+      go(i) {
+        const n = this.groupLooks.length;
+        const next = Math.max(0, Math.min(n - 1, i));
+        if (next === this.activeIdx) return;
+        this.state.active[this.state.group] = next;
+        this.layout();
+        this.syncUi();
+      }
+
+      setGroup(g) {
+        if (g === this.state.group) return;
+        this.state.group = g;
+        this.querySelectorAll('.lb-tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.group === g)));
+        this.querySelectorAll('.lb-track').forEach((t) => (t.hidden = t.dataset.group !== g));
+        const title = this.querySelector('.lb-title__group');
+        title.classList.add('is-swapping');
+        setTimeout(() => { title.textContent = g; title.classList.remove('is-swapping'); }, 220);
+        this.layout(true);
+        // stagger the lineup in from the right
+        if (!REDUCED.matches) {
+          this.querySelectorAll(`.lb-track[data-group="${CSS.escape(g)}"] .lb-fig__frame`).forEach((f, i) => {
+            f.animate([{ opacity: 0, transform: 'translateX(70px)' }, { opacity: 1, transform: 'none' }],
+              { duration: 700, delay: Math.min(i, 8) * 50, easing: 'cubic-bezier(.22,.8,.24,1)', fill: 'backwards' });
+          });
+        }
+        this.syncUi();
+      }
+
+      setColorway(look, i) {
+        if (this.cwIdx(look) === i) return;
+        this.state.cw[look.id] = i;
+        const c = look.colorways[i];
+        const fig = this.querySelector(`.lb-fig[data-look="${CSS.escape(look.id)}"] .lb-fig__frame`);
+        if (fig && c.image) this.swapImg(fig, c.image, c.alt || look.title);
+        if (look === this.activeLook) this.syncUi();
+        if (this.dialog.open && this.detailLook === look) this.renderDetail(true);
+      }
+
+      swapImg(frame, src, alt) {
+        const old = frame.querySelector('.lb-fig__img:not(.is-leaving)');
+        const img = new Image();
+        img.className = 'lb-fig__img is-entering';
+        img.alt = alt;
+        img.draggable = false;
+        img.src = src;
+        const show = () => {
+          frame.appendChild(img);
+          requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('is-entering')));
+          if (old) { old.classList.add('is-leaving-under'); setTimeout(() => old.remove(), 520); } // new image fades in on top
+        };
+        img.decode ? img.decode().then(show, show) : (img.onload = show);
+      }
+
+      /* ---------- events ---------- */
+      bind() {
+        this.addEventListener('click', (e) => {
+          const t = e.target;
+          const fig = t.closest('.lb-fig');
+          if (fig) {
+            const i = +fig.dataset.i;
+            if (i === this.activeIdx) this.openDetail(this.activeLook);
+            else this.go(i);
+            return;
+          }
+          const sw = t.closest('[data-cw]');
+          if (sw) {
+            const look = this.dialog.contains(sw) ? this.detailLook : this.activeLook;
+            this.setColorway(look, +sw.dataset.cw);
+            return;
+          }
+          if (t.closest('.lb-tab')) return this.setGroup(t.closest('.lb-tab').dataset.group);
+          if (t.closest('[data-prev]')) return this.go(this.activeIdx - 1);
+          if (t.closest('[data-next]')) return this.go(this.activeIdx + 1);
+          if (t.closest('[data-open]')) return this.openDetail(this.activeLook);
+          const piece = t.closest('[data-piece]');
+          if (piece && !this.dialog.contains(piece)) return this.openDetail(this.activeLook, 1 + +piece.dataset.piece);
+        });
+
+        this.stage.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.activeIdx - 1); }
+          if (e.key === 'ArrowRight') { e.preventDefault(); this.go(this.activeIdx + 1); }
+        });
+
+        // swipe / drag
+        let sx = null, sy = 0, moved = false;
+        this.stage.addEventListener('pointerdown', (e) => { sx = e.clientX; sy = e.clientY; moved = false; });
+        this.stage.addEventListener('pointermove', (e) => { if (sx !== null && Math.abs(e.clientX - sx) > 8) moved = true; });
+        this.stage.addEventListener('pointerup', (e) => {
+          if (sx === null) return;
+          const dx = e.clientX - sx, dy = e.clientY - sy;
+          sx = null;
+          if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) this.go(this.activeIdx + (dx < 0 ? 1 : -1));
+        });
+        this.stage.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+
+        // theme editor: selecting a block jumps to that look
+        document.addEventListener('shopify:block:select', (e) => {
+          if (e.detail?.sectionId !== this.id.replace('lookbook-lineup-', '')) return;
+          const look = this.looks.find((l) => l.id === e.detail.blockId);
+          if (!look) return;
+          this.setGroup(look.group);
+          this.go(this.groupLooks.indexOf(look));
+        });
+
+        this.dialog.addEventListener('click', (e) => {
+          if (e.target === this.dialog) return this.closeDetail();
+          this.onDetailClick(e);
+        });
+        this.dialog.addEventListener('change', (e) => {
+          const box = e.target.closest('[data-toggle]');
+          if (box) { this.sel.checked[+box.dataset.toggle] = box.checked; this.renderDetail(true); }
+        });
+        this.dialog.addEventListener('cancel', (e) => { e.preventDefault(); this.closeDetail(); });
+      }
+
+      /* ---------- detail sheet ---------- */
+      openDetail(look, media = 0) {
+        if (!look || !look.pieces.length) return;
+        this.detailLook = look;
+        this.sel = { checked: look.pieces.map(() => true), size: {}, media, flagged: false };
+        this.renderDetail();
+        this.lastFocus = document.activeElement;
+        this.dialog.showModal();
+        document.documentElement.style.overflow = 'hidden';
+        this.dialog.querySelector('.lb-detail__close').focus();
+      }
+
+      closeDetail() {
+        if (!this.dialog.open) return;
+        this.dialog.classList.add('is-closing');
+        setTimeout(() => {
+          this.dialog.classList.remove('is-closing');
+          this.dialog.close();
+          document.documentElement.style.overflow = '';
+          this.lastFocus?.focus?.();
+        }, 260);
+      }
+
+      mediaList(look) {
+        const c = this.cw(look);
+        return [
+          { src: c.image, alt: c.alt || look.title, flat: false },
+          ...look.pieces.map((p) => ({ src: this.pieceImage(p, look), alt: p.title, flat: true }))
+        ].filter((m) => m.src);
+      }
+
+      renderDetail(keepScroll = false) {
+        const look = this.detailLook;
+        const s = this.data.settings;
+        const c = this.cw(look);
+        const media = this.mediaList(look);
+        const mi = Math.min(this.sel.media, media.length - 1);
+        const idx = this.groupLooks.indexOf(look);
+        const info = this.dialog.querySelector('.lb-info');
+        const scroll = keepScroll && info ? info.scrollTop : 0;
+
+        const rows = look.pieces.map((p, i) => {
+          const sizes = this.sizesFor(p, look);
+          const chosen = this.sel.size[i];
+          if (chosen && !sizes.some((z) => z.size === chosen && z.available)) delete this.sel.size[i];
+          const v = this.pickVariant(p, look, this.sel.size[i]);
+          const price = v ? v.price : this.piecePrice(p, look);
+          const on = this.sel.checked[i];
+          const needs = this.sel.flagged && on && sizes.length > 1 && !this.sel.size[i];
+          const soldOut = !this.colorVariants(p, look).some((x) => x.available);
+          return `<div class="lb-row${on ? '' : ' is-off'}${needs ? ' needs-size' : ''}">
+            <label class="lb-check"><input type="checkbox" data-toggle="${i}"${on ? ' checked' : ''}${soldOut ? ' disabled' : ''} aria-label="Include ${esc(p.title)}"><span>${ICONS.check}</span></label>
+            ${this.pieceImage(p, look) ? `<img class="lb-row__img" src="${esc(this.pieceImage(p, look))}" alt="">` : '<span></span>'}
+            <span class="lb-row__title"><a href="${esc(p.url)}">${esc(p.title)}</a><span class="lb-row__sub">${soldOut ? 'Sold out' : esc(c.name || '')}</span></span>
+            <span class="lb-row__price">${this.fmt(price)}</span>
+            ${sizes.length > 1 ? `<div class="lb-sizes" role="group" aria-label="Size for ${esc(p.title)}">${sizes.map((z) =>
+              `<button type="button" class="lb-size" data-size="${esc(z.size)}" data-row="${i}" aria-pressed="${this.sel.size[i] === z.size}"${z.available && on ? '' : ' disabled'}>${esc(z.size)}</button>`).join('')}</div>` : ''}
+            ${needs ? '<span class="lb-row__note">Pick a size</span>' : ''}
+          </div>`;
+        }).join('');
+
+        const total = look.pieces.reduce((t, p, i) => {
+          if (!this.sel.checked[i]) return t;
+          const v = this.pickVariant(p, look, this.sel.size[i]);
+          return t + (v ? v.price : this.piecePrice(p, look));
+        }, 0);
+        const count = this.sel.checked.filter(Boolean).length;
+
+        this.dialog.innerHTML = `
+          <button type="button" class="lb-detail__close" data-close aria-label="Close">${ICONS.close}</button>
+          <div class="lb-detail">
+            <div class="lb-thumbs" role="group" aria-label="Images">${media.map((m, i) =>
+              `<button type="button" class="lb-thumb" data-media="${i}" aria-current="${i === mi}" aria-label="${esc(m.alt)}"><img src="${esc(m.src)}" alt=""></button>`).join('')}</div>
+            <div class="lb-media">${media[mi] ? `<img src="${esc(media[mi].src)}" alt="${esc(media[mi].alt)}"${media[mi].flat ? ' class="is-flat"' : ''}>` : ''}</div>
+            <div class="lb-info">
+              <div>
+                <p class="lb-info__eyebrow">${esc(look.group)} · Look ${pad(idx + 1)}</p>
+                <h3 class="lb-info__title">${esc(look.title)}</h3>
+                <p class="lb-info__price">${this.fmt(this.lookPrice(look))} <small>${look.pieces.length} piece${look.pieces.length === 1 ? '' : 's'}</small></p>
+              </div>
+              ${look.story ? `<p class="lb-info__story">${esc(look.story)}</p>` : ''}
+              ${look.colorways.length > 1 ? `<div>
+                <p class="lb-info__label">Colour <span>${esc(c.name || '')}</span></p>
+                <div class="lb-swatches" role="group" aria-label="Colour">${look.colorways.map((cc, i) =>
+                  `<button type="button" class="lb-swatch" data-cw="${i}" style="--sw:${esc(cc.swatch || '#bbb')}" aria-pressed="${i === this.cwIdx(look)}" aria-label="${esc(cc.name || `Colour ${i + 1}`)}"></button>`).join('')}</div>
+              </div>` : ''}
+              <div>
+                <p class="lb-info__label">Pieces in this look</p>
+                <div class="lb-rows">${rows}</div>
+              </div>
+              <div class="lb-actions">
+                <button type="button" class="lb-add" data-add${count ? '' : ' disabled'}>
+                  <span>${esc(s.addLabel || 'Add the look to bag')}</span><span class="lb-pill">${this.fmt(total)}</span>
+                </button>
+                ${s.secondaryLabel && s.secondaryUrl ? `<a class="lb-secondary" href="${esc(s.secondaryUrl)}">${esc(s.secondaryLabel)}</a>` : ''}
+                <p class="lb-status" role="status" data-status></p>
+              </div>
+            </div>
+          </div>`;
+        if (scroll) this.dialog.querySelector('.lb-info').scrollTop = scroll;
+      }
+
+      onDetailClick(e) {
+        const t = e.target;
+        if (t.closest('[data-close]')) return this.closeDetail();
+        const th = t.closest('[data-media]');
+        if (th) { this.sel.media = +th.dataset.media; return this.renderDetail(true); }
+        const sz = t.closest('[data-size]');
+        if (sz) {
+          const r = +sz.dataset.row;
+          this.sel.size[r] = this.sel.size[r] === sz.dataset.size ? undefined : sz.dataset.size;
+          this.renderDetail(true);
+          this.dialog.querySelector(`[data-row="${r}"][data-size="${CSS.escape(sz.dataset.size)}"]`)?.focus();
+          return;
+        }
+        if (t.closest('[data-add]')) this.addToBag();
+      }
+
+      async addToBag() {
+        const look = this.detailLook;
+        const items = [];
+        let missing = false;
+        look.pieces.forEach((p, i) => {
+          if (!this.sel.checked[i]) return;
+          const sizes = this.sizesFor(p, look);
+          if (sizes.length > 1 && !this.sel.size[i]) { missing = true; return; }
+          const v = this.pickVariant(p, look, this.sel.size[i]);
+          if (v && v.available) items.push({ id: v.id, quantity: 1 });
+        });
+        if (missing) {
+          this.sel.flagged = true;
+          this.renderDetail(true);
+          this.setStatus('Pick a size for each piece.', true);
+          this.dialog.querySelector('.needs-size')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          return;
+        }
+        if (!items.length) return this.setStatus('Nothing available to add.', true);
+
+        const btn = this.dialog.querySelector('[data-add]');
+        btn.classList.add('is-busy');
+        btn.disabled = true;
+        const root = (this.data.root || '/').replace(/\/?$/, '/');
+        const drawer = document.querySelector('cart-drawer');
+        const notification = document.querySelector('cart-notification');
+        const sections = drawer?.getSectionsToRender?.().map((x) => x.id) || notification?.getSectionsToRender?.().map((x) => x.id) || ['cart-icon-bubble'];
+        try {
+          const res = await fetch(`${root}cart/add.js`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ items, sections, sections_url: window.location.pathname })
+          });
+          const json = await res.json();
+          if (!res.ok || json.status) throw new Error(json.description || json.message || 'Could not add to bag');
+          document.dispatchEvent(new CustomEvent('lookbook:added', { bubbles: true, detail: { look: look.title, items, response: json } }));
+          document.dispatchEvent(new CustomEvent('cart:refresh', { bubbles: true }));
+          if (drawer?.renderContents) {
+            this.closeDetail();
+            drawer.classList.remove('is-empty');
+            setTimeout(() => drawer.renderContents(json), 280);
+            return;
+          }
+          const bubble = document.getElementById('cart-icon-bubble');
+          if (bubble && json.sections?.['cart-icon-bubble']) {
+            const doc = new DOMParser().parseFromString(json.sections['cart-icon-bubble'], 'text/html');
+            const inner = doc.querySelector('.shopify-section');
+            if (inner) bubble.innerHTML = inner.innerHTML;
+          }
+          this.setStatus(`Added ${items.length} piece${items.length === 1 ? '' : 's'} · <a href="${root}cart">View bag</a>`);
+        } catch (err) {
+          this.setStatus(esc(err.message), true);
+        } finally {
+          btn.classList.remove('is-busy');
+          btn.disabled = false;
+        }
+      }
+
+      setStatus(html, error = false) {
+        const el = this.dialog.querySelector('[data-status]');
+        if (!el) return;
+        el.classList.toggle('is-error', error);
+        el.innerHTML = html;
+      }
+    }
+
+    customElements.define('lookbook-lineup', LookbookLineup);
+  })();
+{% endjavascript %}
+
+{% schema %}
+{
+  "name": "Lookbook lineup",
+  "tag": "section",
+  "class": "section-lookbook-lineup",
+  "max_blocks": 24,
+  "settings": [
+    { "type": "text", "id": "tab_order", "label": "Tab order", "default": "Women, Men", "info": "Comma-separated group names." },
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Lookbook" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Fall '26", "info": "The tab name is added after it, e.g. \"Fall '26 Women\"." },
+    { "type": "textarea", "id": "subheading", "label": "Subheading", "default": "Styled head to toe. Pick a colour, then shop the whole look." },
+    { "type": "header", "content": "Shopping" },
+    { "type": "checkbox", "id": "show_rail", "label": "Show \"In this look\" rail", "default": true },
+    { "type": "text", "id": "rail_label", "label": "Rail label", "default": "In this look" },
+    { "type": "text", "id": "shop_label", "label": "Shop button label", "default": "Shop the look" },
+    { "type": "text", "id": "add_label", "label": "Add to bag label", "default": "Add the look to bag" },
+    { "type": "text", "id": "secondary_label", "label": "Secondary button label", "info": "Optional, e.g. \"Book a fitting\". Shown under Add to bag." },
+    { "type": "url", "id": "secondary_url", "label": "Secondary button link" },
+    { "type": "header", "content": "Lineup" },
+    { "type": "range", "id": "stage_height", "label": "Lineup height", "min": 360, "max": 760, "step": 10, "unit": "px", "default": 560 },
+    { "type": "range", "id": "figure_ratio", "label": "Figure width (% of height)", "min": 25, "max": 60, "step": 1, "unit": "%", "default": 40, "info": "Match your model cut-outs. A 2:5 image is 40%." },
+    { "type": "header", "content": "Colours" },
+    { "type": "color", "id": "bg_top", "label": "Background top", "default": "#F6F3EE" },
+    { "type": "color", "id": "bg_bottom", "label": "Background bottom", "default": "#E7E3DC" },
+    { "type": "color", "id": "text_color", "label": "Text", "default": "#1F1C19" },
+    { "type": "color", "id": "accent", "label": "Button background", "default": "#1F1C19" },
+    { "type": "color", "id": "accent_text", "label": "Button text", "default": "#FFFFFF" },
+    { "type": "header", "content": "Spacing" },
+    { "type": "range", "id": "padding_top", "label": "Top padding", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 48 },
+    { "type": "range", "id": "padding_bottom", "label": "Bottom padding", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 0, "info": "Extra space below the bar. 0 keeps the bar evenly spaced." }
+  ],
+  "blocks": [
+    {
+      "type": "look_ref",
+      "name": "Look from admin",
+      "settings": [
+        { "type": "metaobject", "id": "look", "metaobject_type": "lookbook_look", "label": "Look", "info": "Edit the look's name, products, colours and photos in Content → Metaobjects → Lookbook Look." }
+      ]
+    },
+    {
+      "type": "look",
+      "name": "Custom look",
+      "settings": [
+        { "type": "text", "id": "group", "label": "Group / tab", "default": "Women", "info": "Looks with the same group share a tab, e.g. Women, Men." },
+        { "type": "text", "id": "title", "label": "Look name", "default": "Look name" },
+        { "type": "textarea", "id": "story", "label": "Story" },
+        { "type": "product_list", "id": "pieces", "label": "Pieces", "limit": 4, "info": "Variants whose colour matches the colourway name are used automatically." },
+        { "type": "header", "content": "Colourway 1" },
+        { "type": "text", "id": "cw1_name", "label": "Name", "default": "Sand" },
+        { "type": "color", "id": "cw1_swatch", "label": "Swatch", "default": "#C9B79C" },
+        { "type": "image_picker", "id": "cw1_image", "label": "Model image", "info": "Transparent PNG/WebP, full body, feet touching the bottom edge." },
+        { "type": "header", "content": "Colourway 2" },
+        { "type": "text", "id": "cw2_name", "label": "Name" },
+        { "type": "color", "id": "cw2_swatch", "label": "Swatch" },
+        { "type": "image_picker", "id": "cw2_image", "label": "Model image" },
+        { "type": "header", "content": "Colourway 3" },
+        { "type": "text", "id": "cw3_name", "label": "Name" },
+        { "type": "color", "id": "cw3_swatch", "label": "Swatch" },
+        { "type": "image_picker", "id": "cw3_image", "label": "Model image" }
+      ]
+    }
+  ],
+  "presets": [
+    { "name": "Lookbook lineup" }
+  ]
+}
+{% endschema %}
